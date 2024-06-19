@@ -1,4 +1,7 @@
+import Networks.ByteImage
+import Networks.DatasetInput
 import Networks.MNIST
+import Networks.toMatrix
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -12,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 import java.io.File
 import java.io.IOException
@@ -27,8 +32,8 @@ fun readBytesFromFile(filePath: String): ByteArray {
     }
 }
 
-fun loadDataset(path: String, test: Boolean = true): DatasetInput{
-    val imagePath =if (test)  "$path/t10k-images.idx3-ubyte" else  "$path/train-images.idx3-ubyte"
+fun loadDataset(path: String, test: Boolean = true): DatasetInput {
+    val imagePath =if (test)  "$path/images.idx3-ubyte" else  "$path/images.idx3-ubyte"
     //TRAINING SET IMAGE FILE (train-images-idx3-ubyte):
     //[offset] [type]          [value]          [description]
     //0000     32 bit integer  0x00000803(2051) magic number
@@ -42,7 +47,7 @@ fun loadDataset(path: String, test: Boolean = true): DatasetInput{
     //Pixels are organized row-wise. Pixel values are 0 to 255. 0 means background (white), 255 means foreground (black).
 
 
-    val labelPath = if (test) "$path/t10k-labels.idx1-ubyte" else "$path/train-labels.idx1-ubyte"
+    val labelPath = if (test) "$path/labels.idx1-ubyte" else "$path/labels.idx1-ubyte"
     //[offset] [type]          [value]          [description]
     //0000     32 bit integer  0x00000801(2049) magic number (MSB first)
     //0004     32 bit integer  10000            number of items
@@ -66,7 +71,7 @@ fun loadDataset(path: String, test: Boolean = true): DatasetInput{
     val numBytesPerImage = rows * columns
     val images = mutableListOf<ByteImage>()
     repeat(numberOfImages){
-        images.add(ByteImage(rows, columns, imageBytes.copyOfRange(index, index+numBytesPerImage)))
+        images.add(ByteImage(rows, columns, imageBytes.copyOfRange(index, index + numBytesPerImage)))
         index += numBytesPerImage
     }
     val labels = mutableListOf<Int>()
@@ -84,23 +89,42 @@ fun loadDataset(path: String, test: Boolean = true): DatasetInput{
 
 @Composable
 @Preview
-fun App(input: DatasetInput) {
+fun App(train: DatasetInput, test: DatasetInput) {
     val mnist = remember { MNIST(784, 150, 10) }
     var index by remember { mutableStateOf(0) }
+    var error by remember { mutableStateOf("") }
+    var progress by remember { mutableStateOf(0F) }
+    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()){
-        if (input.images.size>index){
+        if (train.images.size>index){
             MaterialTheme {
-                GrayscaleImage(Modifier.align(Alignment.CenterStart), input.images[index])
+                GrayscaleImage(Modifier.align(Alignment.CenterStart), train.images[index])
                 Button(onClick = {
-                    mnist.iterate(input.images[index].toMatrix(normalize = true), input.lable[index].toMatrix())
+                    mnist.iterate(train.images[index].toMatrix(normalize = true), train.lable[index].toMatrix())
                 }, modifier = Modifier.align(Alignment.Center)){
                     Text("Forward pass")
                 }
-                Text(input.lable[index].toString(), modifier = Modifier.align(Alignment.CenterEnd))
+                Text(train.lable[index].toString(), modifier = Modifier.align(Alignment.CenterEnd))
             }
         }
-        Button(modifier = Modifier.align(Alignment.BottomCenter), onClick = {index = Random.nextInt(input.numberOfImages)}){
+        Button(modifier = Modifier.align(Alignment.BottomCenter), onClick = {index = Random.nextInt(train.numberOfImages)}){
             Text("Random")
+        }
+        Button(modifier = Modifier.align(Alignment.BottomEnd), onClick = {
+            scope.launch(Dispatchers.IO){
+                error = "${mnist.calcError(test)}"
+            }
+        }){
+            Text(if (error.isEmpty()) "Calc Error" else error)
+        }
+        Button(modifier = Modifier.align(Alignment.BottomStart), onClick = {
+            scope.launch(Dispatchers.IO){
+                mnist.epoch(train){
+                    progress = it
+                }
+            }
+        }){
+            Text("Epoch ${(progress*100).toInt()}%")
         }
     }
 
@@ -129,11 +153,14 @@ fun Pixel(color: Byte){
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication) {
-        var input by remember { mutableStateOf(DatasetInput()) }
+        var test by remember { mutableStateOf(DatasetInput()) }
+        var train by remember { mutableStateOf(DatasetInput()) }
         LaunchedEffect(Unit){
-            val filePath = "src/main/resources/MNIST Dataset"
-            input = loadDataset(filePath)
+            val testPath = "src/main/resources/MNIST Dataset/test"
+            val trainPath = "src/main/resources/MNIST Dataset/train"
+            test = loadDataset(testPath)
+            train = loadDataset(testPath)
         }
-        App(input)
+        App(train, test)
     }
 }

@@ -1,6 +1,7 @@
 package LinearAlgebra
 
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.sqrt
 
 class Matrix(val rows: Int, val cols: Int, val data: Array<Float> = Array(rows*cols){0f}) {
     //An mxn Matrix has
@@ -9,6 +10,9 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<Float> = Array(rows*c
     init {
         require(data.size == (rows*cols))
     }
+
+    val isScalar: Boolean
+        get() = cols == 1 || rows == 1
 
     fun get(row: Int, col: Int): Float{
         return data[col + row * cols]
@@ -85,6 +89,15 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<Float> = Array(rows*c
             }
         }
         return Matrix(this.rows, this.cols, ret)
+    }
+
+    fun absolute(): Float{
+        require(this.isScalar)
+        var squaredSum = 0F
+        this.data.forEach {
+            squaredSum += it*it
+        }
+        return sqrt(squaredSum)
     }
 
     operator fun times(other: Number): Matrix{

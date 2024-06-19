@@ -1,6 +1,7 @@
 package Networks
 
 import LinearAlgebra.Matrix
+import kotlinx.coroutines.coroutineScope
 import kotlin.random.Random
 
 // Activation functions and their derivatives
@@ -35,15 +36,36 @@ class MNIST(val inputLayer: Int, val hiddenLayer: Int, val outputLayer: Int) {
         return Pair(zValues, aValues)
     }
 
+    fun epoch(train: DatasetInput, progress: (Float) -> Unit){
+        train.images.forEachIndexed { index, value ->
+            iterate(value.toMatrix(normalize = true), train.lable[index].toMatrix())
+            progress(index/train.images.size.toFloat())
+        }
+    }
 
-    fun iterate(image: Matrix, label: Matrix){
+    suspend fun calcError(input: DatasetInput): Double{
+        var totalError = 0.0
+        coroutineScope {
+            input.images.forEachIndexed { index, value ->
+                val (z, a) = forward(value.toMatrix(normalize = true))
+                val prediction = a.last()
+                val actual = input.lable[index].toMatrix()
+
+                totalError += (prediction-actual).absolute()
+            }
+        }
+        return totalError/input.images.size
+    }
+
+
+    fun iterate(image: Matrix, label: Matrix, learningRate: Float = 0.0001F){
         val (zValues, aValues) = forward(image)
         val (dWeights, dBiases) = backward(image, zValues, aValues, label)
         dWeights.forEachIndexed { index, value ->
-            weights[index] += value
+            weights[index] += value*learningRate
         }
         dBiases.forEachIndexed { index, value ->
-            biases[index] += value
+            biases[index] += value*learningRate
         }
     }
 
