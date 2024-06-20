@@ -1,3 +1,4 @@
+import LinearAlgebra.Matrix
 import Networks.ByteImage
 import Networks.DatasetInput
 import Networks.MNIST
@@ -33,7 +34,7 @@ fun readBytesFromFile(filePath: String): ByteArray {
 }
 
 fun loadDataset(path: String, test: Boolean = true): DatasetInput {
-    val imagePath =if (test)  "$path/images.idx3-ubyte" else  "$path/images.idx3-ubyte"
+    val imagePath = if (test) "$path/images.idx3-ubyte" else "$path/images.idx3-ubyte"
     //TRAINING SET IMAGE FILE (train-images-idx3-ubyte):
     //[offset] [type]          [value]          [description]
     //0000     32 bit integer  0x00000803(2051) magic number
@@ -60,26 +61,26 @@ fun loadDataset(path: String, test: Boolean = true): DatasetInput {
     val imageBytes = readBytesFromFile(imagePath)
 
     var index = 0
-    val magicNumber = imageBytes.copyOfRange(index, index+4).toInt()
+    val magicNumber = imageBytes.copyOfRange(index, index + 4).toInt()
     index += 4
-    val numberOfImages = imageBytes.copyOfRange(index, index+4).toInt()
+    val numberOfImages = imageBytes.copyOfRange(index, index + 4).toInt()
     index += 4
-    val rows = imageBytes.copyOfRange(index, index+4).toInt()
+    val rows = imageBytes.copyOfRange(index, index + 4).toInt()
     index += 4
-    val columns = imageBytes.copyOfRange(index, index+4).toInt()
+    val columns = imageBytes.copyOfRange(index, index + 4).toInt()
 
     val numBytesPerImage = rows * columns
     val images = mutableListOf<ByteImage>()
-    repeat(numberOfImages){
+    repeat(numberOfImages) {
         images.add(ByteImage(rows, columns, imageBytes.copyOfRange(index, index + numBytesPerImage)))
         index += numBytesPerImage
     }
     val labels = mutableListOf<Int>()
     val labelBytes = readBytesFromFile(labelPath)
     index = 4
-    val numberOfLabels = labelBytes.copyOfRange(index, index+4).toInt()
+    val numberOfLabels = labelBytes.copyOfRange(index, index + 4).toInt()
     index += 4
-    repeat(numberOfLabels){
+    repeat(numberOfLabels) {
         labels.add(labelBytes[index].toInt())
         index += 1
     }
@@ -92,39 +93,71 @@ fun loadDataset(path: String, test: Boolean = true): DatasetInput {
 fun App(train: DatasetInput, test: DatasetInput) {
     val mnist = remember { MNIST(784, 150, 10) }
     var index by remember { mutableStateOf(0) }
+    var numEpochs by remember { mutableStateOf(0) }
+    var isTraining by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf(0F) }
+    var prediction by remember { mutableStateOf(Matrix.zero(10, 1)) }
     val scope = rememberCoroutineScope()
-    Box(Modifier.fillMaxSize()){
-        if (train.images.size>index){
+
+    LaunchedEffect(isTraining) {
+        if (isTraining) {
+            scope.launch(Dispatchers.IO){
+                mnist.train(train,
+                    5,
+                    progress = { it ->
+                        progress = it
+                    },
+                    epochFinish = { epoch ->
+                        numEpochs = epoch
+                    }
+                )
+            }
+        }else{
+            println("Cancel")
+        }
+    }
+    Box(Modifier.fillMaxSize().padding(16.dp)) {
+        if (train.images.size > index) {
             MaterialTheme {
                 GrayscaleImage(Modifier.align(Alignment.CenterStart), train.images[index])
                 Button(onClick = {
-                    mnist.iterate(train.images[index].toMatrix(normalize = true), train.lable[index].toMatrix())
-                }, modifier = Modifier.align(Alignment.Center)){
+                    prediction =
+                        mnist.iterate(train.images[index].toMatrix(normalize = true), train.lable[index].toMatrix())
+                }, modifier = Modifier.align(Alignment.Center)) {
                     Text("Forward pass")
                 }
-                Text(train.lable[index].toString(), modifier = Modifier.align(Alignment.CenterEnd))
+                Column(modifier = Modifier.align(Alignment.CenterEnd).width(150.dp)) {
+                    prediction.data.forEachIndexed { index, value ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${value * 100}%")
+                            Text("${index}")
+                        }
+                    }
+                }
             }
         }
-        Button(modifier = Modifier.align(Alignment.BottomCenter), onClick = {index = Random.nextInt(train.numberOfImages)}){
+        Button(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            onClick = { index = Random.nextInt(train.numberOfImages) }) {
             Text("Random")
         }
         Button(modifier = Modifier.align(Alignment.BottomEnd), onClick = {
-            scope.launch(Dispatchers.IO){
+            scope.launch(Dispatchers.IO) {
                 error = "${mnist.calcError(test)}"
             }
-        }){
+        }) {
             Text(if (error.isEmpty()) "Calc Error" else error)
         }
         Button(modifier = Modifier.align(Alignment.BottomStart), onClick = {
-            scope.launch(Dispatchers.IO){
-                mnist.epoch(train){
-                    progress = it
-                }
-            }
-        }){
-            Text("Epoch ${(progress*100).toInt()}%")
+            isTraining = !isTraining
+        }) {
+            Text(if (isTraining) {
+                String.format("%.2f%% in Epoch %d", progress * 100, numEpochs)
+            } else {
+                "Start Training"
+            })
+
         }
     }
 
@@ -132,11 +165,11 @@ fun App(train: DatasetInput, test: DatasetInput) {
 }
 
 @Composable
-fun GrayscaleImage(modifier: Modifier, img: ByteImage){
+fun GrayscaleImage(modifier: Modifier, img: ByteImage) {
     Column(modifier) {
-        for (y in 0 until img.height){
+        for (y in 0 until img.height) {
             Row {
-                for (x in 0 until img.width){
+                for (x in 0 until img.width) {
                     Pixel(img.get(x, y))
                 }
             }
@@ -146,7 +179,7 @@ fun GrayscaleImage(modifier: Modifier, img: ByteImage){
 }
 
 @Composable
-fun Pixel(color: Byte){
+fun Pixel(color: Byte) {
     val grayscale = color.toInt()
     Box(Modifier.size(5.dp).background(Color(grayscale, grayscale, grayscale, 255)))
 }
@@ -155,7 +188,7 @@ fun main() = application {
     Window(onCloseRequest = ::exitApplication) {
         var test by remember { mutableStateOf(DatasetInput()) }
         var train by remember { mutableStateOf(DatasetInput()) }
-        LaunchedEffect(Unit){
+        LaunchedEffect(Unit) {
             val testPath = "src/main/resources/MNIST Dataset/test"
             val trainPath = "src/main/resources/MNIST Dataset/train"
             test = loadDataset(testPath)

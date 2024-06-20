@@ -179,12 +179,15 @@ class Matrix(val rows: Int, val cols: Int, val data: Array<Float> = Array(rows*c
         return Matrix(matrix.rows - 1, matrix.cols - 1, subData)
     }
 
-    fun softMax(): Matrix{
+    fun softMax(): Matrix {
         require(this.rows == 1)
-        var total = 0F
-        this.data.forEach { total += it }
-        return Matrix(this.rows, this.cols, data = this.data.map { it / total }.toTypedArray())
+        val max = this.data.maxOrNull() ?: 0f
+        val exps = this.data.map { kotlin.math.exp(it - max) }
+        val sumExps = exps.sum()
+        val softmax = exps.map { it / sumExps }
+        return Matrix(this.rows, this.cols, softmax.toTypedArray())
     }
+
 
     private fun cofactor(matrix: Matrix, row: Int, col: Int): Float {
         val subMatrix = subMatrix(matrix, row, col)

@@ -2,6 +2,8 @@ package Networks
 
 import LinearAlgebra.Matrix
 import kotlinx.coroutines.coroutineScope
+import kotlin.math.log
+import kotlin.math.pow
 import kotlin.random.Random
 
 // Activation functions and their derivatives
@@ -11,18 +13,23 @@ fun reluDerivative(x: Float): Float = if (x > 0) 1.0F else 0.0F
 
 class MNIST(val inputLayer: Int, val hiddenLayer: Int, val outputLayer: Int) {
     var weights: Array<Matrix> = arrayOf(
-        Matrix(rows = inputLayer, cols = hiddenLayer){ i, j -> Random.nextFloat() },
-        Matrix(rows = hiddenLayer, cols = outputLayer){i, j -> Random.nextFloat()}
+        Matrix(rows = inputLayer, cols = hiddenLayer) { i, j -> 0F },
+        Matrix(rows = hiddenLayer, cols = outputLayer) { i, j -> 0F }
     )
     var biases: Array<Matrix> = arrayOf(
-        Matrix(rows = 1, cols = hiddenLayer){ i, j -> Random.nextFloat() },
-        Matrix(rows = 1, cols = outputLayer){i, j -> Random.nextFloat()}
+        Matrix(rows = 1, cols = hiddenLayer) { i, j -> 0F },
+        Matrix(rows = 1, cols = outputLayer) { i, j -> 0F }
     )
 
     fun forward(input: Matrix): Pair<Array<Matrix>, Array<Matrix>> {
         var current = input
-        val zValues = Array(weights.size) { Matrix.zero(2) }        //sums
-        val aValues = Array(weights.size + 1) { Matrix.zero(2) }    //activations
+        val zValues = Array(weights.size) { Matrix.zero(input.rows, weights[it].cols) } //sums
+        val aValues = Array(weights.size + 1) {
+            Matrix.zero(
+                input.rows,
+                if (it == weights.size) outputLayer else weights[it].cols
+            )
+        } //activations
 
         aValues[0] = input
         weights.forEachIndexed { index, weight ->
@@ -36,14 +43,14 @@ class MNIST(val inputLayer: Int, val hiddenLayer: Int, val outputLayer: Int) {
         return Pair(zValues, aValues)
     }
 
-    fun epoch(train: DatasetInput, progress: (Float) -> Unit){
+    fun epoch(train: DatasetInput, progress: (Float) -> Unit) {
         train.images.forEachIndexed { index, value ->
             iterate(value.toMatrix(normalize = true), train.lable[index].toMatrix())
-            progress(index/train.images.size.toFloat())
+            progress(index / train.images.size.toFloat())
         }
     }
 
-    suspend fun calcError(input: DatasetInput): Double{
+    suspend fun calcError(input: DatasetInput): Double {
         var totalError = 0.0
         coroutineScope {
             input.images.forEachIndexed { index, value ->
@@ -51,27 +58,34 @@ class MNIST(val inputLayer: Int, val hiddenLayer: Int, val outputLayer: Int) {
                 val prediction = a.last()
                 val actual = input.lable[index].toMatrix()
 
-                totalError += (prediction-actual).absolute()
+                totalError += (actual - prediction).absolute()
             }
         }
-        return totalError/input.images.size
+        return totalError / input.numberOfImages
     }
 
-
-    fun iterate(image: Matrix, label: Matrix, learningRate: Float = 0.0001F){
+    fun iterate(image: Matrix, label: Matrix, learningRate: Float = 0.0005F): Matrix {
         val (zValues, aValues) = forward(image)
-        val (dWeights, dBiases) = backward(image, zValues, aValues, label)
+        val (dWeights, dBiases) = backward(zValues, aValues, label)
         dWeights.forEachIndexed { index, value ->
-            weights[index] += value*learningRate
+            weights[index] += value * learningRate
         }
         dBiases.forEachIndexed { index, value ->
-            biases[index] += value*learningRate
+            biases[index] += value * learningRate
+        }
+        return aValues.last()
+    }
+
+    fun train(input: DatasetInput, epochs: Int, progress: (Float) -> Unit, epochFinish: (Int) -> Unit) {
+        repeat(epochs) {
+            epoch(input, progress = progress)
+            epochFinish(it + 1)
         }
     }
 
-    fun backward(input: Matrix, zValues: Array<Matrix>, aValues: Array<Matrix>, labels: Matrix): Pair<Array<Matrix>, Array<Matrix>> {
-        val dWeights = Array(weights.size) { Matrix.zero(weights[0].rows, weights[0].cols) }
-        val dBiases = Array(biases.size) { Matrix.zero(biases[0].rows, biases[0].cols) }
+    fun backward(zValues: Array<Matrix>, aValues: Array<Matrix>, labels: Matrix): Pair<Array<Matrix>, Array<Matrix>> {
+        val dWeights = Array(weights.size) { Matrix.zero(weights[it].rows, weights[it].cols) }
+        val dBiases = Array(biases.size) { Matrix.zero(biases[it].rows, biases[it].cols) }
 
         // Calculate the error at the output layer
         val dZLast = aValues.last() - labels
@@ -90,4 +104,5 @@ class MNIST(val inputLayer: Int, val hiddenLayer: Int, val outputLayer: Int) {
         }
         return Pair(dWeights, dBiases)
     }
+
 }
